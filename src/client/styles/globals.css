@@ -1,0 +1,420 @@
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Press+Start+2P&family=Noto+Sans+JP:wght@400;700&family=DotGothic16&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================
+   CSS Custom Properties（デザイントークン）
+   ============================================ */
+:root {
+  /* セーフエリア */
+  --sat: env(safe-area-inset-top, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+
+  /* フルードタイポグラフィ */
+  --font-xs: clamp(0.625rem, 0.5rem + 0.5vw, 0.75rem);    /* 10-12px */
+  --font-sm: clamp(0.75rem, 0.625rem + 0.5vw, 0.875rem);   /* 12-14px */
+  --font-base: clamp(0.875rem, 0.75rem + 0.5vw, 1rem);      /* 14-16px */
+  --font-lg: clamp(1rem, 0.875rem + 0.5vw, 1.125rem);       /* 16-18px */
+  --font-xl: clamp(1.125rem, 1rem + 0.5vw, 1.375rem);       /* 18-22px */
+
+  /* エグゼカラー（CSS変数版・JS以外でも使える） */
+  --cyber-bg: #0a0e27;
+  --navi-blue: #0070ec;
+  --navi-glow: #00e8d8;
+  --exe-green: #00ff41;
+  --exe-yellow: #ffd700;
+  --alert-red: #ff3333;
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    font-family: 'Share Tech Mono', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    height: 100dvh;
+    overflow: hidden;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    background-color: #0a0e27;
+    color: #e0e0e0;
+    /* テキスト可読性向上 */
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    line-height: 1.6;
+  }
+
+  #root {
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* スクロールバー */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #2d4a7a; border-radius: 2px; }
+
+  /* フォーカス表示（エグゼイエローリング） */
+  :focus-visible {
+    outline: 2px solid #ffd700;
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  /* 選択テキスト */
+  ::selection {
+    background: rgba(0, 112, 236, 0.4);
+    color: #ffffff;
+  }
+}
+
+@layer components {
+  /* ============================================
+     背景パターン
+     ============================================ */
+
+  /* 電脳世界グリッド背景 */
+  .cyber-grid {
+    background-color: #0a0e27;
+    background-image:
+      linear-gradient(#0070ec10 1px, transparent 1px),
+      linear-gradient(90deg, #0070ec10 1px, transparent 1px),
+      radial-gradient(circle, #00e8d810 1px, transparent 1px);
+    background-size: 20px 20px, 20px 20px, 20px 20px;
+  }
+
+  /* 等角グリッド（電脳世界の床・奥行きあり） */
+  .cyber-floor {
+    position: relative;
+    overflow: hidden;
+  }
+  .cyber-floor::before {
+    content: '';
+    position: absolute;
+    width: 200%;
+    height: 200%;
+    top: -50%;
+    left: -50%;
+    background-image:
+      linear-gradient(rgba(0, 232, 216, 0.12) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0, 232, 216, 0.12) 1px, transparent 1px);
+    background-size: 40px 40px;
+    transform: perspective(500px) rotateX(60deg);
+    transform-origin: center center;
+    animation: grid-scroll 20s linear infinite;
+    pointer-events: none;
+    will-change: background-position;
+  }
+
+  @keyframes grid-scroll {
+    0%   { background-position: 0 0; }
+    100% { background-position: 0 40px; }
+  }
+
+  /* 回路パターン背景 */
+  .circuit-pattern {
+    background-image:
+      linear-gradient(#0070ec08 1px, transparent 1px),
+      linear-gradient(90deg, #0070ec08 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+
+  /* 回路パターン + ドット */
+  .circuit-dots {
+    background-image:
+      radial-gradient(circle, rgba(0, 232, 216, 0.12) 1px, transparent 1px),
+      linear-gradient(rgba(0, 112, 236, 0.06) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0, 112, 236, 0.06) 1px, transparent 1px);
+    background-size: 20px 20px;
+  }
+
+  /* データストリーム（流れるライン） */
+  .data-stream {
+    position: relative;
+    overflow: hidden;
+  }
+  .data-stream::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0, 232, 216, 0.04) 2px,
+      rgba(0, 232, 216, 0.04) 4px
+    );
+    animation: scanline 8s linear infinite;
+    pointer-events: none;
+  }
+
+  /* ============================================
+     UIコンポーネント
+     ============================================ */
+
+  /* PET風カードフレーム */
+  .pet-frame {
+    background: linear-gradient(180deg, #101b2e 0%, #0a0e27 100%);
+    border: 2px solid #0070ec;
+    border-radius: 8px;
+    box-shadow: 0 0 10px rgba(0, 112, 236, 0.25), inset 0 0 20px rgba(0, 112, 236, 0.06);
+    position: relative;
+  }
+  .pet-frame::before {
+    content: '';
+    position: absolute;
+    inset: 2px;
+    border: 1px solid rgba(0, 232, 216, 0.12);
+    border-radius: 6px;
+    pointer-events: none;
+  }
+
+  /* ネオングローボタン */
+  .neon-btn {
+    background: linear-gradient(135deg, #0070ec, #003d8f);
+    border: 1px solid #3cbcfc;
+    box-shadow: 0 0 10px rgba(0, 112, 236, 0.3);
+    transition: all 0.2s ease;
+    min-height: 48px;  /* タッチターゲット最小サイズ */
+    min-width: 48px;
+  }
+  .neon-btn:hover, .neon-btn:active {
+    box-shadow: 0 0 20px rgba(0, 232, 216, 0.4);
+    border-color: #00e8d8;
+  }
+  .neon-btn:active {
+    transform: scale(0.95);
+  }
+
+  /* スキャンラインオーバーレイ */
+  .scanlines::after {
+    content: '';
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 1px,
+      rgba(0, 0, 0, 0.02) 1px,
+      rgba(0, 0, 0, 0.02) 2px
+    );
+    pointer-events: none;
+    z-index: 9999;
+  }
+
+  /* ナビマーク（円形エンブレム） */
+  .navi-mark {
+    width: 48px; height: 48px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #0070ec, #003d8f);
+    border: 3px solid #3cbcfc;
+    box-shadow: 0 0 12px rgba(0, 232, 216, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* チップカード風ボタン */
+  .chip-btn {
+    background: linear-gradient(135deg, #1a2744, #101b2e);
+    border: 1px solid #2d4a7a;
+    border-radius: 4px;
+    padding: 8px 12px;
+    transition: all 0.2s ease;
+    color: #b0e0ff;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: var(--font-sm);
+    min-height: 44px;  /* タッチターゲット */
+  }
+  .chip-btn:hover, .chip-btn:active {
+    border-color: #00e8d8;
+    box-shadow: 0 0 8px rgba(0, 232, 216, 0.25);
+  }
+  .chip-btn.mega { border-color: #3cbcfc; box-shadow: 0 0 8px rgba(60,188,252,0.25); }
+  .chip-btn.giga { border-color: #ffd700; box-shadow: 0 0 8px rgba(255,215,0,0.25); }
+
+  /* ============================================
+     HPバー / ステータスゲージ
+     ============================================ */
+  .hp-bar {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: var(--font-sm);
+    color: #ffffff;
+    text-shadow: 0 0 4px rgba(0, 232, 216, 0.5);
+  }
+  .hp-bar-fill {
+    height: 4px;
+    border-radius: 2px;
+    background: linear-gradient(90deg, #00ff41, #00e8d8);
+    box-shadow: 0 0 6px rgba(0, 255, 65, 0.4);
+    transition: width 0.3s ease;
+  }
+  .hp-bar-fill.warning {
+    background: linear-gradient(90deg, #ff8c00, #ffd700);
+    box-shadow: 0 0 6px rgba(255, 140, 0, 0.4);
+  }
+  .hp-bar-fill.danger {
+    background: linear-gradient(90deg, #ff3333, #ff6666);
+    box-shadow: 0 0 6px rgba(255, 51, 51, 0.4);
+  }
+
+  /* ============================================
+     接続状態インジケーター
+     ============================================ */
+  .status-connected {
+    color: #00ff41;
+    text-shadow: 0 0 8px rgba(0, 255, 65, 0.6);
+  }
+  .status-disconnected {
+    color: #ff3333;
+    animation: neon-flicker 4s ease-in-out infinite;
+  }
+  .status-reconnecting {
+    color: #ffd700;
+    animation: glow-pulse 1s ease-in-out infinite;
+  }
+
+  @keyframes neon-flicker {
+    0%, 100% { opacity: 1; }
+    92% { opacity: 1; }
+    93% { opacity: 0.8; }
+    94% { opacity: 1; }
+    96% { opacity: 0.9; }
+    97% { opacity: 1; }
+  }
+
+  /* ============================================
+     タイプライターカーソル
+     ============================================ */
+  .type-cursor {
+    border-right: 2px solid #00e8d8;
+    animation: type-cursor 1s step-end infinite;
+  }
+
+  @keyframes type-cursor {
+    0%, 100% { border-color: #00e8d8; }
+    50% { border-color: transparent; }
+  }
+
+  /* ============================================
+     セーフエリア対応ユーティリティ
+     ============================================ */
+  .safe-top { padding-top: calc(var(--sat) + 8px); }
+  .safe-bottom { padding-bottom: calc(var(--sab) + 8px); }
+  .safe-left { padding-left: calc(var(--sal) + 8px); }
+  .safe-right { padding-right: calc(var(--sar) + 8px); }
+}
+
+/* ============================================
+   ライトモード
+   ============================================ */
+.light-mode {
+  --cyber-bg: #f5f7fa;
+  --navi-blue: #0066cc;
+  --navi-glow: #0066cc;
+  --exe-green: #00a030;
+  --exe-yellow: #b8860b;
+  --alert-red: #cc2222;
+}
+.light-mode body {
+  background-color: #f5f7fa;
+  color: #1a1a2e;
+}
+.light-mode .bg-cyber-bg { background-color: #f5f7fa; }
+.light-mode .bg-cyber-surface { background-color: #ffffff; }
+.light-mode .border-cyber-border { border-color: #e0e4ea; }
+.light-mode .text-cyber-text { color: #1a1a2e; }
+.light-mode .text-txt-secondary { color: #2c3e5a; }
+.light-mode .text-txt-muted { color: #7a8499; }
+.light-mode .pet-frame {
+  background: #ffffff;
+  border-color: #e0e4ea;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+.light-mode .pet-frame::before {
+  border-color: rgba(0, 102, 204, 0.08);
+}
+.light-mode .neon-btn {
+  background: linear-gradient(135deg, #0066cc, #0052a3);
+  border-color: #3399ff;
+  box-shadow: 0 2px 8px rgba(0, 102, 204, 0.25);
+}
+.light-mode .neon-btn:hover, .light-mode .neon-btn:active {
+  box-shadow: 0 4px 16px rgba(0, 102, 204, 0.35);
+  border-color: #66bbff;
+}
+.light-mode .chip-btn {
+  background: #ffffff;
+  border-color: #e0e4ea;
+  color: #2c3e5a;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+.light-mode .chip-btn:hover, .light-mode .chip-btn:active {
+  border-color: #0066cc;
+  box-shadow: 0 2px 8px rgba(0, 102, 204, 0.15);
+}
+.light-mode .scanlines::after { display: none; }
+.light-mode .cyber-grid {
+  background-color: #f5f7fa;
+  background-image:
+    linear-gradient(#0066cc08 1px, transparent 1px),
+    linear-gradient(90deg, #0066cc08 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+.light-mode .circuit-dots {
+  background-image: radial-gradient(circle, rgba(0, 102, 204, 0.07) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+.light-mode ::-webkit-scrollbar-thumb { background: #c8d0dc; }
+.light-mode ::selection {
+  background: rgba(0, 102, 204, 0.15);
+  color: #1a1a2e;
+}
+.light-mode :focus-visible {
+  outline-color: #0066cc;
+}
+
+/* ============================================
+   アクセシビリティ: reduced motion対応
+   ============================================ */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .cyber-floor::before { animation: none; }
+  .scanlines::after { display: none; }
+  .data-stream::before { animation: none; }
+}
+
+/* ============================================
+   レスポンシブ: ランドスケープ対応
+   ============================================ */
+@media (orientation: landscape) and (max-height: 500px) {
+  .header-area { height: 36px; }
+  .input-area { padding-top: 4px; padding-bottom: 4px; }
+}
+
+/* ============================================
+   スクロール挙動
+   ============================================ */
+@layer utilities {
+  .scroll-touch {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
+  }
+  .no-horizontal-scroll {
+    overflow-x: hidden;
+  }
+}

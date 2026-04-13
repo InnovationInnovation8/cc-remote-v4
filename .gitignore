@@ -1,0 +1,88 @@
+# Dependencies / build outputs
+node_modules/
+dist/
+build/
+.cache/
+.backups/
+
+# Database / runtime
+db/
+*.log
+*.err
+*.exe
+scripts/setup-template.env
+
+# Env / secrets
+.env
+.env.*
+.env_*
+pc.env
+firebase-admin-key.json
+*.key
+*.pem
+
+# Firebase remnants (v4 is Firebase-free)
+.firebase/
+.firebaserc
+firebase.json
+firestore.rules
+firestore_*.rules
+hosting/
+
+# Backup files
+*.bak
+*_20260*.js
+*_20260*.jsx
+*_20260*.json
+*_20260*.md
+*_20260*.html
+*_20260*.svg
+*_20260*.rules
+*_20260*.bat
+*_20260*.vbs
+*_20260*.mjs
+*_20260*
+
+# Distribution artifacts
+*.zip
+
+# OMC / local state
+.omc/
+.trash/
+
+# v3 / TWA experiments (not part of v4)
+twa/
+twa-v2/
+twa-assets/
+twa-config.json
+packages/
+src/agent/
+src/cloud/
+
+# Old docs / postmortems
+HANDOFF_*.md
+HANDOFF_*
+POSTMORTEM_*.md
+
+# Local test scripts
+reset-pin.js
+test-api.js
+test-browser.cjs
+test-screenshot.js
+test-*.js
+
+# Old / deprecated scripts
+scripts/build-zip_test_backup.mjs
+scripts/deploy-firestore-rules.js
+scripts/pair-register*
+scripts/migrate-pc-identity.mjs
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.tsbuildinfo
+
+# MCP local config
+.mcp.json

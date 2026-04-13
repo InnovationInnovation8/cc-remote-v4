@@ -1,0 +1,13 @@
+{
+  "pkg": {
+    "scripts": ["src/server/**/*.js", "src/shared/**/*.js"],
+    "assets": [
+      "dist/**/*",
+      "node_modules/node-pty/build/Release/*.node",
+      "node_modules/node-pty/build/Release/spawn-helper*",
+      "node_modules/sql.js/dist/sql-wasm.wasm"
+    ],
+    "targets": ["node20-win-x64"],
+    "outputPath": "build/CC Remote.exe"
+  }
+}

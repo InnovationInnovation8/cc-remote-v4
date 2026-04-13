@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="ja" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+  <meta name="theme-color" content="#0a0e27" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="description" content="スマホからPCのClaude Codeをリモート操作。どこでも仕事ができるAIアシスタント。" />
+  <meta name="robots" content="noindex, nofollow" />
+  <meta property="og:title" content="CC Remote" />
+  <meta property="og:description" content="スマホからPCのClaude Codeをリモート操作。どこでも仕事ができるAIアシスタント。" />
+  <meta property="og:image" content="/icons/icon-192.svg" />
+  <title>CC Remote</title>
+  <link rel="icon" type="image/png" href="/icons/icon-192.svg" />
+  <link rel="apple-touch-icon" href="/icons/icon-192.svg" />
+  <link rel="manifest" href="/manifest.json" />
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body class="bg-cyber-bg text-cyber-text">
+  <div id="root"></div>
+  <script type="module" src="/src/client/main.jsx"></script>
+  <script>
+    // Service Worker: unregister any previously-installed SW and clear all caches
+    // to avoid stale bundles. Also registers the self-destroying sw.js stub once
+    // so existing installs get cleaned up on next visit.
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(regs => {
+        for (const reg of regs) reg.unregister().catch(() => {});
+      }).catch(() => {});
+      if (window.caches && caches.keys) {
+        caches.keys().then(keys => {
+          for (const k of keys) caches.delete(k).catch(() => {});
+        }).catch(() => {});
+      }
+    }
+  </script>
+</body>
+</html>
