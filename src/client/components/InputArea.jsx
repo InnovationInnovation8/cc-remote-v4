@@ -6,9 +6,10 @@ import ShortcutBar from './ShortcutBar';
 import { soundClick } from '../utils/sounds';
 import { getAuthHeaders } from '../utils/api';
 
-// Rev 6.3: 自前の音声認識 (Web Speech API) は廃止。
-//   - Android Gboard 等の OS 標準音声入力で textarea に直接入力してもらう
-//   - 送信時は常に「整理 meta-prompt」でラップして送る (乱れた音声入力でも Claude 側で整形)
+// Rev 6.4: 音声入力自動検出（手動キーボード入力は meta-prompt ラップしない）
+//   - iOS dictation → inputType === 'insertReplacementText' で検出
+//   - 一度に 10 文字以上挿入 → 音声 or ペーストと判定（ペーストは insertFromPaste で除外）
+//   - 削除・単発文字入力は検出リセット（手動編集に入ったとみなす）
 
 export default function InputArea({ sessionId, token, onShowTemplates, onShowSchedule, quotedText, onQuoteClear, suggestedText, onSuggestClear, claudeReady }) {
   const { sendInput, sendKey } = useSession(token);
@@ -25,6 +26,7 @@ export default function InputArea({ sessionId, token, onShowTemplates, onShowSch
   const [uploading, setUploading] = useState(false);
   const [previewImg, setPreviewImg] = useState(null);
   const [stopCooldown, setStopCooldown] = useState(false);
+  const [voiceDetected, setVoiceDetected] = useState(false);
   // Rev 6: YES/NO chip の連打防止 (ゴーストタップで y が大量送信される事故の再発防止)
   const chipCooldownRef = useRef(0);
   const tryChipTap = useCallback((fn) => {
@@ -35,6 +37,7 @@ export default function InputArea({ sessionId, token, onShowTemplates, onShowSch
   }, []);
 
   useEffect(() => { localStorage.setItem('ccr-autosave', text); }, [text]);
+  useEffect(() => { if (!text) setVoiceDetected(false); }, [text]);
   useEffect(() => {
     const saved = localStorage.getItem('ccr-autosave');
     if (saved) setText(saved);
@@ -93,7 +96,7 @@ export default function InputArea({ sessionId, token, onShowTemplates, onShowSch
   const handleSend = useCallback(async () => {
     if (!text.trim() || !sessionId) return;
 
-    const wrapped = wrapVoiceMemo(text);
+    const wrapped = voiceDetected ? wrapVoiceMemo(text) : text;
     try {
       if (!online) {
         enqueue(`/api/sessions/${sessionId}/input`, 'POST',
@@ -112,9 +115,10 @@ export default function InputArea({ sessionId, token, onShowTemplates, onShowSch
     localStorage.setItem('ccr-input-history', JSON.stringify(newHistory));
     setHistoryIndex(-1);
     setText('');
+    setVoiceDetected(false);
     setPreviewImg(prev => { if (prev) URL.revokeObjectURL(prev); return null; });
     localStorage.removeItem('ccr-autosave');
-  }, [text, sessionId, sendInput, history, online, enqueue, token]);
+  }, [text, sessionId, sendInput, history, online, enqueue, token, voiceDetected]);
 
   const handlePaletteSelect = useCallback((cmd) => {
     setText(cmd);
@@ -210,6 +214,21 @@ export default function InputArea({ sessionId, token, onShowTemplates, onShowSch
         </div>
       )}
 
+      {/* Voice input indicator */}
+      {voiceDetected && (
+        <div className="text-[10px] text-navi-glow font-mono mb-1 px-1 flex items-center gap-1">
+          <span>🎤</span>
+          <span>音声入力 — 送信時に整形プロンプトでラップします</span>
+          <button
+            type="button"
+            onClick={() => setVoiceDetected(false)}
+            className="ml-auto text-txt-muted hover:text-txt-bright underline"
+          >
+            解除
+          </button>
+        </div>
+      )}
+
       {/* Input area */}
       <div data-tutorial-id="input-area" className="flex gap-1.5 items-end relative">
         <CommandPalette
@@ -243,6 +262,17 @@ export default function InputArea({ sessionId, token, onShowTemplates, onShowSch
           onInput={e => {
             e.target.style.height = 'auto';
             e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px';
+            // Detect voice/dictation input (iOS: insertReplacementText, chunked: length > 10)
+            const ne = e.nativeEvent || {};
+            const type = ne.inputType;
+            const chunkLen = (ne.data || '').length;
+            if (type === 'insertReplacementText' || type === 'insertFromDictation') {
+              setVoiceDetected(true);
+            } else if (type === 'insertText' && chunkLen > 10) {
+              setVoiceDetected(true);
+            } else if (type === 'insertFromPaste' || (type && type.startsWith('delete')) || (type === 'insertText' && chunkLen <= 2)) {
+              if (voiceDetected) setVoiceDetected(false);
+            }
           }}
         />
         <button
