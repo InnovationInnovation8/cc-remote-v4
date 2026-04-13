@@ -47,7 +47,7 @@ app.use((req, res, next) => {
 });
 
 // CORS — restrict origins (no wildcard fallback)
-const ALLOWED_ORIGIN_PATTERN = /\.trycloudflare\.com$|^https?:\/\/localhost(:\d+)?$|^https:\/\/lkoron4l\.github\.io$/;
+const ALLOWED_ORIGIN_PATTERN = /\.trycloudflare\.com$|^https?:\/\/localhost(:\d+)?$|^https:\/\/(lkoron4l|innovationinnovation8)\.github\.io$/i;
 app.use((req, res, next) => {
   const origin = req.headers['origin'];
   if (origin && ALLOWED_ORIGIN_PATTERN.test(origin)) {
