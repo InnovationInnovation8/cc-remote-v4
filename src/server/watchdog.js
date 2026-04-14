@@ -19,8 +19,8 @@ const RESTART_COOLDOWN_MS = 5 * 60 * 1000; // 5 min
 const MAX_TUNNEL_RESTART_ATTEMPTS = 3;
 const TUNNEL_RESTART_COOLDOWN_MS = 5 * 60 * 1000; // 5 min
 const TUNNEL_STARTUP_GRACE_MS = 30 * 1000;        // 30 sec
-const TUNNEL_SELFPING_INTERVAL_MS = 10 * 60 * 1000; // 10 min
-const TUNNEL_SELFPING_FAIL_THRESHOLD = 3;
+const TUNNEL_SELFPING_INTERVAL_MS = 2 * 60 * 1000;  // 2 min (was 10)
+const TUNNEL_SELFPING_FAIL_THRESHOLD = 2;            // 2 (was 3) — max detect 5min
 const TUNNEL_SELFPING_TIMEOUT_MS = 5000;
 
 const _tunnelRestart = { count: 0, lastAttemptAt: 0 };
@@ -39,7 +39,7 @@ export function initWatchdog(port = 3737) {
   if (process.env.CC_REMOTE_TUNNEL_SELFPING === '0') {
     console.log('[Watchdog][Tunnel] self-ping 無効化（CC_REMOTE_TUNNEL_SELFPING=0）');
   } else {
-    console.log('[Watchdog][Tunnel] self-ping 有効（10分間隔、連続3回失敗で再起動）');
+    console.log(`[Watchdog][Tunnel] self-ping 有効（${TUNNEL_SELFPING_INTERVAL_MS/60000}分間隔、連続${TUNNEL_SELFPING_FAIL_THRESHOLD}回失敗で再起動、localhost経由）`);
   }
 }
 
@@ -179,7 +179,8 @@ async function checkTunnel(port) {
   _lastPingAt = now;
 
   try {
-    const res = await fetch(global.tunnelUrl + '/api/ping', {
+    // Step 1.5: self-ping via localhost to avoid DNS propagation false-positives
+    const res = await fetch('http://localhost:' + port + '/api/ping', {
       method: 'HEAD',
       signal: AbortSignal.timeout(TUNNEL_SELFPING_TIMEOUT_MS),
     });
@@ -191,13 +192,29 @@ async function checkTunnel(port) {
     _pingFailStreak++;
     console.log(`[Watchdog][Tunnel] self-ping 失敗 ${_pingFailStreak}/${TUNNEL_SELFPING_FAIL_THRESHOLD}: ${e.message}`);
     if (_pingFailStreak >= TUNNEL_SELFPING_FAIL_THRESHOLD) {
-      console.log('[Watchdog][Tunnel] エッジ到達不能、再起動します');
+      // R2-5: self-ping 経路も再起動上限カウンターに連動（無限再起動防止）
+      const now = Date.now();
+      if (now - _tunnelRestart.lastAttemptAt >= TUNNEL_RESTART_COOLDOWN_MS) {
+        _tunnelRestart.count = 0;
+      }
+      if (_tunnelRestart.count >= MAX_TUNNEL_RESTART_ATTEMPTS) {
+        console.log('[Watchdog][Tunnel] self-ping 経路: 再起動上限到達、諦めます');
+        sendNotification(
+          'Tunnel 再起動上限',
+          'self-ping 経路で再起動が連続失敗しました。手動対応が必要です。'
+        ).catch(() => {});
+        _pingFailStreak = 0;
+        return;
+      }
+      _tunnelRestart.count++;
+      _tunnelRestart.lastAttemptAt = now;
+      console.log(`[Watchdog][Tunnel] ローカルAPI到達不能、tunnel再起動（self-ping 試行 ${_tunnelRestart.count}/${MAX_TUNNEL_RESTART_ATTEMPTS}）`);
       _pingFailStreak = 0;
       try {
         await restartTunnel(port);
         sendNotification(
           'Tunnel 自動再起動',
-          'cloudflared edge への疎通が連続失敗したため再起動しました'
+          'ローカル /api/ping が連続失敗したため tunnel を再起動しました'
         ).catch(() => {});
       } catch (err) {
         console.log(`[Watchdog][Tunnel] restartTunnel (self-ping 経路) エラー: ${err.message}`);
