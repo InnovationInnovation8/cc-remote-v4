@@ -33,6 +33,9 @@ const APP_ROOT = process.pkg
 const app = express();
 const PORT = process.env.PORT || 3737;
 
+// rate-limit 用: cloudflared 経由の X-Forwarded-For を信頼（localhost bind 前提）
+app.set('trust proxy', 'loopback');
+
 app.use(compression());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -683,6 +686,14 @@ _main().catch((err) => {
   } else {
     process.exit(1);
   }
+});
+
+// 未処理Promise/例外のキャッチ（Node.js 15+ デフォルトのexit(1)回避）
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[Server] UnhandledRejection:', reason?.stack || reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[Server] UncaughtException:', err?.stack || err);
 });
 
 // シャットダウン

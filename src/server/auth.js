@@ -10,10 +10,20 @@
 //   - authMiddleware: x-pin only
 import { Router } from 'express';
 import crypto from 'crypto';
+import rateLimit from 'express-rate-limit';
 import { OAuth2Client } from 'google-auth-library';
 import { getDB, saveDB } from './db.js';
 
 const authRoutes = Router();
+
+// PIN brute force 対策: 1分あたり10回 / IP
+const loginLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'ログイン試行が多すぎます。1分後に再試行してください。' },
+});
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '963785499726-v0da2q3hqktflate717q7033snjcht90.apps.googleusercontent.com';
 const ALLOWED_EMAILS = (process.env.ALLOWED_EMAILS || 'lkoron4l@gmail.com')
@@ -141,7 +151,7 @@ authRoutes.post('/setup', (req, res) => {
   res.json({ ok: true, token });
 });
 
-authRoutes.post('/login', (req, res) => {
+authRoutes.post('/login', loginLimiter, (req, res) => {
   const { pin } = req.body;
   if (!pin) {
     return res.status(400).json({ error: 'PINが必要です' });
