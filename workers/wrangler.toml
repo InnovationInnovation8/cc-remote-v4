@@ -1,0 +1,87 @@
+name = "cc-remote-dispatcher"
+main = "src/index.js"
+compatibility_date = "2025-04-01"
+account_id = "96a3283c25361ff85dc0414a41ff5aab"
+
+[[durable_objects.bindings]]
+name = "PC_REGISTRY"
+class_name = "PCRegistry"
+
+[[durable_objects.bindings]]
+name = "SESSION_STORE"
+class_name = "SessionStore"
+
+[[durable_objects.bindings]]
+name = "INVITE_STORE"
+class_name = "InviteStore"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["PCRegistry"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["SessionStore"]
+
+[[migrations]]
+tag = "v3"
+new_sqlite_classes = ["InviteStore"]
+
+[env.staging]
+name = "cc-remote-dispatcher-staging"
+workers_dev = true
+
+[env.staging.vars]
+OAUTH_REDIRECT_URI = "https://cc-remote-dispatcher-staging.lkoron4l.workers.dev/api/auth/callback"
+
+[[env.staging.durable_objects.bindings]]
+name = "PC_REGISTRY"
+class_name = "PCRegistry"
+
+[[env.staging.durable_objects.bindings]]
+name = "SESSION_STORE"
+class_name = "SessionStore"
+
+[[env.staging.durable_objects.bindings]]
+name = "INVITE_STORE"
+class_name = "InviteStore"
+
+[[env.staging.migrations]]
+tag = "v1"
+new_sqlite_classes = ["PCRegistry"]
+
+[[env.staging.migrations]]
+tag = "v2"
+new_sqlite_classes = ["SessionStore"]
+
+[[env.staging.migrations]]
+tag = "v3"
+new_sqlite_classes = ["InviteStore"]
+
+[env.production]
+name = "cc-remote-dispatcher"
+workers_dev = true
+
+[[env.production.durable_objects.bindings]]
+name = "PC_REGISTRY"
+class_name = "PCRegistry"
+
+[[env.production.durable_objects.bindings]]
+name = "SESSION_STORE"
+class_name = "SessionStore"
+
+[[env.production.durable_objects.bindings]]
+name = "INVITE_STORE"
+class_name = "InviteStore"
+
+[[env.production.migrations]]
+tag = "v1"
+new_sqlite_classes = ["PCRegistry"]
+
+[[env.production.migrations]]
+tag = "v2"
+new_sqlite_classes = ["SessionStore"]
+
+[[env.production.migrations]]
+tag = "v3"
+new_sqlite_classes = ["InviteStore"]
