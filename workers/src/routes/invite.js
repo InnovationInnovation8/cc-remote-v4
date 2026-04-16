@@ -7,8 +7,6 @@
 
 import { parseSessionCookie, validateOriginCsrf } from '../auth/cookie.js';
 
-const DEFAULT_ORIGIN = 'https://cc-remote-dispatcher-staging.lkoron4l.workers.dev';
-
 /**
  * POST /api/invite/create
  * 認証済みセッションを持つユーザーが24時間有効な招待URLを生成する。
@@ -31,11 +29,10 @@ export async function handleInviteCreate(request, env) {
   }
 
   // Origin CSRF validation
-  const allowedOrigins = env.ALLOWED_ORIGINS
-    ? env.ALLOWED_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean)
-    : [DEFAULT_ORIGIN];
+  const allowedOrigins = (env.ALLOWED_ORIGINS || '')
+    .split(',').map((s) => s.trim()).filter(Boolean);
 
-  if (!validateOriginCsrf(request, allowedOrigins)) {
+  if (allowedOrigins.length === 0 || !validateOriginCsrf(request, allowedOrigins)) {
     return Response.json({ error: 'forbidden: origin not allowed' }, { status: 403 });
   }
 

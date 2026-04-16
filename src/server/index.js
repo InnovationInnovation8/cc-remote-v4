@@ -18,6 +18,9 @@ import { scheduleRoutes, startScheduleRunner } from './schedule.js';
 import { initWatchdog } from './watchdog.js';
 import { initSleepControl, disableSleep, restoreSleep, isSleepDisabled } from './sleep-control.js';
 import { startTunnel, getTunnelUrl, onTunnelUrlChange } from './tunnel.js';
+import { connectToWorkers } from './workers-auth.js';
+import { startWorkersHeartbeat, sendImmediateHeartbeat } from './workers-heartbeat.js';
+import { createHash } from 'node:crypto';
 import { printQR } from '../../scripts/qr.js';
 import { getDB, saveDB } from './db.js';
 import { execSync, spawn } from 'child_process';
@@ -50,13 +53,18 @@ app.use((req, res, next) => {
 });
 
 // CORS — restrict origins (no wildcard fallback)
-const ALLOWED_ORIGIN_PATTERN = /\.trycloudflare\.com$|^https?:\/\/localhost(:\d+)?$|^https:\/\/(lkoron4l|innovationinnovation8)\.github\.io$/i;
+// Static allowlist (always-on): trycloudflare tunnel + localhost
+// Extra origins come from env.ALLOWED_ORIGIN (single) or env.ALLOWED_ORIGINS (CSV)
+const ALLOWED_ORIGIN_PATTERN = /\.trycloudflare\.com$|^https?:\/\/localhost(:\d+)?$/i;
+const EXTRA_ALLOWED_ORIGINS = new Set(
+  [
+    ...(process.env.ALLOWED_ORIGIN ? [process.env.ALLOWED_ORIGIN] : []),
+    ...(process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : []),
+  ].map((s) => s.trim()).filter(Boolean)
+);
 app.use((req, res, next) => {
   const origin = req.headers['origin'];
-  if (origin && ALLOWED_ORIGIN_PATTERN.test(origin)) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
-    res.setHeader('Access-Control-Allow-Credentials', 'true');
-  } else if (process.env.ALLOWED_ORIGIN && origin === process.env.ALLOWED_ORIGIN) {
+  if (origin && (ALLOWED_ORIGIN_PATTERN.test(origin) || EXTRA_ALLOWED_ORIGINS.has(origin))) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Access-Control-Allow-Credentials', 'true');
   }
@@ -621,11 +629,13 @@ export async function start() {
     };
 
     // v4: トンネル URL 変化を global.tunnelUrl に反映 + QR 再表示 + ChatWork 通知
+    //      + Workers dispatcher へ即時 heartbeat
     onTunnelUrlChange(async (newUrl) => {
       console.log(`[Server] トンネルURL変化検出: ${newUrl}`);
       global.tunnelUrl = newUrl;
       await printQR(newUrl).catch(() => {});
       notifyTunnelUrl(newUrl, 'CC Remote v4 トンネルURL更新');
+      sendImmediateHeartbeat(newUrl);
     });
 
     // Cloudflareトンネル自動起動
@@ -638,7 +648,56 @@ export async function start() {
       console.log(`[Server] トンネルURL: ${tunnelUrl}`);
       // Chatwork通知（ヘルパ経由で起動時 URL を送信）
       notifyTunnelUrl(tunnelUrl, 'CC Remote v4 トンネルURL');
+
+      // Workers dispatcher 登録 + heartbeat 開始
+      //   前提: .env に WORKERS_DISPATCHER_URL, HMAC_SECRET, WORKERS_EMAIL, PC_ID を設定
+      //   PC_LABEL は省略可（未設定時は os.hostname() をフォールバック）
+      await initWorkersDispatcher(tunnelUrl);
     }
+  });
+}
+
+/**
+ * Workers dispatcher への初回 /connect 登録と heartbeat 起動。
+ * env 未設定時はスキップ（CC Remote v3 相当のローカル運用にフォールバック）。
+ */
+async function initWorkersDispatcher(tunnelUrl) {
+  const dispatcherUrl = process.env.WORKERS_DISPATCHER_URL;
+  const pcId = process.env.PC_ID;
+  const secret = process.env.HMAC_SECRET;
+  const email = process.env.WORKERS_EMAIL;
+  const label = process.env.PC_LABEL || os.hostname();
+
+  if (!dispatcherUrl || !pcId || !secret || !email) {
+    console.log('[WorkersDispatcher] env 未設定（WORKERS_DISPATCHER_URL/PC_ID/HMAC_SECRET/WORKERS_EMAIL）。dispatcher 連携無効。');
+    return;
+  }
+
+  const emailHash = createHash('sha256').update(email.toLowerCase().trim()).digest('hex');
+
+  // 初回 /connect 登録
+  try {
+    await connectToWorkers({
+      dispatcherUrl,
+      pcId,
+      pcSecret: secret,
+      emailHash,
+      pcUrl: tunnelUrl,
+      label,
+    });
+    console.log(`[WorkersDispatcher] /connect 成功: pcId=${pcId} label=${label}`);
+  } catch (e) {
+    console.log(`[WorkersDispatcher] /connect 失敗（heartbeat で再試行される）: ${e.message}`);
+  }
+
+  // heartbeat タイマー起動（120秒間隔）
+  startWorkersHeartbeat({
+    dispatcherUrl,
+    pcId,
+    secret,
+    email,
+    label,
+    getTunnelUrl: () => global.tunnelUrl || null,
   });
 }
 

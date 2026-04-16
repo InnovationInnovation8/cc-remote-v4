@@ -1,44 +1,52 @@
-// CC-Remote v4 — PC list local storage manager
-// Schema: localStorage['cc_remote_pcs'] = [{ id, label, url, addedAt }]
+// CC-Remote v4 — PC list store (IndexedDB backed, sync API via in-memory cache)
 //
-// id     : crypto.randomUUID() (client-generated)
-// label  : user-set display name
-// url    : cloudflared tunnel URL (https://xxx.trycloudflare.com)
-// addedAt: ISO 8601 timestamp
+// Schema: cc_remote_pcs = [{ id, label, url, addedAt }]
 //
-// Migration: ccr-remote-base (v3 single-PC URL) → first entry in cc_remote_pcs
+// 設計: IndexedDB を永続ストアとして使いつつ、モジュールレベルのメモリキャッシュで
+// 同期 API (listPcs / findPc) を提供する。呼び出し側のシグネチャ変更を最小化するため。
+//
+// initPcStore() を起動時に呼ぶことで IndexedDB → キャッシュへロードする。
+// それ以降は listPcs() が同期で返せる。
+
+import { idbGet, idbSet } from './idbStore';
 
 const KEY = 'cc_remote_pcs';
-const LEGACY_KEY = 'ccr-remote-base';
 
-export function listPcs() {
+// モジュールレベルのメモリキャッシュ
+let _cache = null;
+
+/**
+ * 起動時に一度呼ぶことで IndexedDB からキャッシュをロードする。
+ * migrateFromLocalStorage() の後に呼ぶこと。
+ */
+export async function initPcStore() {
+  const raw = await idbGet(KEY, []);
   try {
-    const raw = localStorage.getItem(KEY);
-    if (!raw) {
-      // One-time migration from v3 single-PC URL
-      const legacy = localStorage.getItem(LEGACY_KEY);
-      if (legacy) {
-        const migrated = [{
-          id: crypto.randomUUID(),
-          label: 'My PC',
-          url: legacy,
-          addedAt: new Date().toISOString(),
-        }];
-        savePcs(migrated);
-        return migrated;
-      }
-      return [];
-    }
-    return JSON.parse(raw);
+    _cache = Array.isArray(raw) ? raw : JSON.parse(raw);
   } catch {
-    return [];
+    _cache = [];
   }
 }
 
+function getCache() {
+  if (_cache === null) {
+    // initPcStore() 未呼び出し時のフォールバック（空配列）
+    return [];
+  }
+  return _cache;
+}
+
+function persist(list) {
+  _cache = list;
+  idbSet(KEY, list); // 非同期で保存（fire-and-forget）
+}
+
+export function listPcs() {
+  return getCache();
+}
+
 export function savePcs(list) {
-  try {
-    localStorage.setItem(KEY, JSON.stringify(list || []));
-  } catch {}
+  persist(list || []);
 }
 
 export function addPc({ label, url }) {
@@ -56,18 +64,18 @@ export function addPc({ label, url }) {
     addedAt: new Date().toISOString(),
   };
   list.push(pc);
-  savePcs(list);
+  persist(list);
   return pc;
 }
 
 export function removePc(id) {
   const list = listPcs().filter(p => p.id !== id);
-  savePcs(list);
+  persist(list);
 }
 
 export function renamePc(id, newLabel) {
   const list = listPcs().map(p => p.id === id ? { ...p, label: newLabel } : p);
-  savePcs(list);
+  persist(list);
 }
 
 export function findPc(id) {
@@ -85,4 +93,33 @@ export async function pingPc(url, timeoutMs = 3000) {
   } catch {
     return false;
   }
+}
+
+/**
+ * Dispatcher から PC 一覧を取得する（Cookie 認証）
+ *
+ * @param {string} dispatcherUrl - dispatcher の base URL（例: https://<worker>.<subdomain>.workers.dev）
+ * @returns {Promise<Array<{ pc_id: string, label: string, tunnel_url: string, last_heartbeat_at: number, registered_at: number }>>}
+ * @throws {Error} 401 の場合は 'unauthorized' エラー、その他エラーも throw
+ */
+export async function fetchPcsFromDispatcher(dispatcherUrl) {
+  const resp = await fetch(`${dispatcherUrl}/api/pcs`, {
+    method: 'GET',
+    credentials: 'include',
+  });
+
+  if (resp.status === 401) {
+    const err = new Error('unauthorized');
+    err.status = 401;
+    throw err;
+  }
+
+  if (!resp.ok) {
+    const err = new Error(`dispatcher error: ${resp.status}`);
+    err.status = resp.status;
+    throw err;
+  }
+
+  const data = await resp.json();
+  return data.pcs || [];
 }

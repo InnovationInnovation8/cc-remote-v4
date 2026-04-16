@@ -27,12 +27,20 @@ new_sqlite_classes = ["SessionStore"]
 tag = "v3"
 new_sqlite_classes = ["InviteStore"]
 
+# ──── staging（継続、名前変更なし）────
 [env.staging]
 name = "cc-remote-dispatcher-staging"
 workers_dev = true
 
-[env.staging.vars]
-OAUTH_REDIRECT_URI = "https://cc-remote-dispatcher-staging.lkoron4l.workers.dev/api/auth/callback"
+# [env.staging.vars] moved to secrets (see .dev.vars.example)
+# Set via: wrangler secret put OAUTH_REDIRECT_URI --env staging
+# Set via: wrangler secret put ALLOWED_ORIGINS --env staging
+
+[env.staging.assets]
+directory = "../dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = true
 
 [[env.staging.durable_objects.bindings]]
 name = "PC_REGISTRY"
@@ -58,9 +66,20 @@ new_sqlite_classes = ["SessionStore"]
 tag = "v3"
 new_sqlite_classes = ["InviteStore"]
 
+# ──── production（cc-remote へリネーム）────
 [env.production]
-name = "cc-remote-dispatcher"
+name = "cc-remote"
 workers_dev = true
+
+# [env.production.vars] moved to secrets (see .dev.vars.example)
+# Set via: wrangler secret put OAUTH_REDIRECT_URI --env production
+# Set via: wrangler secret put ALLOWED_ORIGINS --env production
+
+[env.production.assets]
+directory = "../dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = true
 
 [[env.production.durable_objects.bindings]]
 name = "PC_REGISTRY"

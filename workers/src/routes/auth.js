@@ -199,16 +199,19 @@ export async function handleAuthCallback(request, env) {
 
   const { expires_at } = await sessionResp.json();
 
-  // Issue HttpOnly session cookie. Token also returned in body when DEBUG_RETURN_TOKEN=true.
+  // Issue HttpOnly session cookie. On DEBUG_RETURN_TOKEN mode return JSON for tests;
+  // otherwise redirect back to the PWA root so the user lands on the app.
   const cookieHeader = buildSessionCookie(session_token);
-  const body = { ok: true, email_hash, expires_at };
-  if (env.DEBUG_RETURN_TOKEN === 'true') body.session_token = session_token;
-  return new Response(JSON.stringify(body), {
-    headers: {
-      'Content-Type': 'application/json',
-      'Set-Cookie': cookieHeader,
-    },
-    status: 200,
+  if (env.DEBUG_RETURN_TOKEN === 'true') {
+    const body = { ok: true, email_hash, expires_at, session_token };
+    return new Response(JSON.stringify(body), {
+      headers: { 'Content-Type': 'application/json', 'Set-Cookie': cookieHeader },
+      status: 200,
+    });
+  }
+  return new Response(null, {
+    status: 302,
+    headers: { Location: '/', 'Set-Cookie': cookieHeader },
   });
 }
 
@@ -217,19 +220,17 @@ export async function handleAuthCallback(request, env) {
  * Revokes the session and clears the session cookie.
  *
  * Validates Origin header against env.ALLOWED_ORIGINS (comma-separated).
- * Defaults to staging dispatcher origin if not set.
+ * If ALLOWED_ORIGINS is unset or empty, all requests are rejected (403).
  *
  * @param {Request} request
  * @param {object} env
  * @returns {Response}
  */
 export async function handleAuthLogout(request, env) {
-  const DEFAULT_ORIGIN = 'https://cc-remote-dispatcher-staging.lkoron4l.workers.dev';
-  const allowedOrigins = env.ALLOWED_ORIGINS
-    ? env.ALLOWED_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean)
-    : [DEFAULT_ORIGIN];
+  const allowedOrigins = (env.ALLOWED_ORIGINS || '')
+    .split(',').map((s) => s.trim()).filter(Boolean);
 
-  if (!validateOriginCsrf(request, allowedOrigins)) {
+  if (allowedOrigins.length === 0 || !validateOriginCsrf(request, allowedOrigins)) {
     return Response.json({ error: 'forbidden: origin not allowed' }, { status: 403 });
   }
 

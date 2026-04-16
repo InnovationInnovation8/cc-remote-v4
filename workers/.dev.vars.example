@@ -1,0 +1,17 @@
+# Copy to .dev.vars for local development (gitignored via .env_*).
+# For staging/production, set via: `wrangler secret put <NAME> --env <staging|production>`
+
+# Google OAuth 2.0 redirect URI registered in Google Cloud Console.
+# Must exactly match the "Authorized redirect URIs" entry.
+OAUTH_REDIRECT_URI="https://<YOUR_WORKER_NAME>.<YOUR_SUBDOMAIN>.workers.dev/api/auth/callback"
+
+# Comma-separated list of origins allowed to call state-changing endpoints
+# (POST /api/auth/logout, POST /api/invite/create). Used for Origin CSRF validation.
+ALLOWED_ORIGINS="https://<YOUR_WORKER_NAME>.<YOUR_SUBDOMAIN>.workers.dev"
+
+# Google OAuth 2.0 client credentials (from Google Cloud Console).
+GOOGLE_CLIENT_ID=""
+GOOGLE_CLIENT_SECRET=""
+
+# Shared HMAC secret for PC registration/heartbeat. Generate: `openssl rand -hex 32`
+HMAC_SECRET=""

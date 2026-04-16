@@ -56,7 +56,7 @@ The following secrets must be configured via `wrangler secret put` before the Go
 | `GOOGLE_CLIENT_ID` | Google OAuth2 Client ID (from Google Cloud Console). Stored as secret for parity even though it is technically public. |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth2 Client Secret. Never commit this value. |
 | `HMAC_SECRET` | Already exists from Week 1. Reuse the same value. Signs HMAC heartbeat tokens and OAuth CSRF state. |
-| `OAUTH_REDIRECT_URI` | The authorized redirect URI registered in Google Cloud Console. For staging: `https://cc-remote-dispatcher-staging.lkoron4l.workers.dev/api/auth/callback` |
+| `OAUTH_REDIRECT_URI` | The authorized redirect URI registered in Google Cloud Console. For staging: `https://cc-remote-dispatcher-staging.<YOUR_SUBDOMAIN>.workers.dev/api/auth/callback` |
 | `DEBUG_RETURN_TOKEN` | ⚠️ Never set in production — it leaks session tokens in OAuth callback responses. Local dev only. |
 
 ### Wrangler commands (staging)
@@ -81,26 +81,25 @@ wrangler secret put OAUTH_REDIRECT_URI     --env production
 > Note: `OAUTH_REDIRECT_URI` for production will be the production Workers URL once it is set up.
 > Register both staging and production URIs in the Google Cloud Console "Authorized redirect URIs" list.
 
-## Week 2 Environment Variables (non-secret)
+## Environment Variables (moved to secrets)
 
-The following regular env vars are set via `[vars]` in `wrangler.toml` or `--var` for `wrangler dev`. They are **not** secrets and do not use `wrangler secret put`.
+`ALLOWED_ORIGINS` and `OAUTH_REDIRECT_URI` were previously set via `[vars]` in `wrangler.toml` but have been moved to secrets to keep deployment URLs out of the public repo.
 
 | Variable | Description | Example value |
 |---|---|---|
-| `ALLOWED_ORIGINS` | Comma-separated list of origins permitted to call state-changing endpoints (e.g. `POST /api/auth/logout`). Used for Origin CSRF validation. If unset, defaults to the staging dispatcher origin. | `https://cc-remote-dispatcher-staging.lkoron4l.workers.dev` |
+| `ALLOWED_ORIGINS` | Comma-separated list of origins permitted to call state-changing endpoints (e.g. `POST /api/auth/logout`). Used for Origin CSRF validation. **If unset or empty, all state-changing requests return 403.** | `https://cc-remote-dispatcher-staging.<YOUR_SUBDOMAIN>.workers.dev` |
 
 ### Setting `ALLOWED_ORIGINS` for local dev
 
-```bash
-wrangler dev --var ALLOWED_ORIGINS=http://localhost:3000
+Create `workers/.dev.vars` from `.dev.vars.example` (gitignored):
+
+```
+ALLOWED_ORIGINS=http://localhost:3000
 ```
 
-### Setting `ALLOWED_ORIGINS` in wrangler.toml
+### Setting `ALLOWED_ORIGINS` for staging/production
 
-```toml
-[vars]
-ALLOWED_ORIGINS = "https://cc-remote-dispatcher-staging.lkoron4l.workers.dev"
-
-[env.production.vars]
-ALLOWED_ORIGINS = "https://cc-remote-dispatcher.lkoron4l.workers.dev"
+```bash
+wrangler secret put ALLOWED_ORIGINS --env staging
+wrangler secret put ALLOWED_ORIGINS --env production
 ```

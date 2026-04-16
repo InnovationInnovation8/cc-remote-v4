@@ -26,8 +26,11 @@ const loginLimiter = rateLimit({
 });
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '963785499726-v0da2q3hqktflate717q7033snjcht90.apps.googleusercontent.com';
-const ALLOWED_EMAILS = (process.env.ALLOWED_EMAILS || 'lkoron4l@gmail.com')
+const ALLOWED_EMAILS = (process.env.ALLOWED_EMAILS || '')
   .split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+if (ALLOWED_EMAILS.length === 0) {
+  console.warn('[auth] ALLOWED_EMAILS is empty — all Google logins will be rejected. Set ALLOWED_EMAILS in .env');
+}
 const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
 const googleSessions = new Map();
 const GOOGLE_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
