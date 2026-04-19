@@ -6,12 +6,29 @@ import Terminal from './components/Terminal';
 import InputArea from './components/InputArea';
 import ErrorBoundary from './components/ErrorBoundary';
 import ErrorDisplay from './components/ErrorDisplay';
+import RoomTabs from './components/RoomTabs';
+import Sidebar from './components/Sidebar';
 import { useAuth } from './hooks/useAuth';
+import { useStageMode } from './hooks/useStageMode';
+import { usePcList } from './hooks/usePcList';
+import { useFullscreen } from './hooks/useFullscreen';
+import { useSession } from './hooks/useSession';
 import { soundBoot, soundComplete } from './utils/sounds';
-import { setRemoteBase, getApiBase, getAuthHeaders } from './utils/api';
+import { setRemoteBase, getApiBase, getAuthHeaders, initApiStore, fetchLinkTicket, dispatcherLink, setToken, setGoogleSession, setActivePcLabel } from './utils/api';
 import { findPc } from './utils/pcStore';
 import PCTabs from './components/PCTabs';
 import AddPCLocal from './components/AddPCLocal';
+import { idbGet, idbSet, migrateFromLocalStorage } from './utils/idbStore';
+import { initPcStore } from './utils/pcStore';
+
+const DISPATCHER_MODE =
+  !!import.meta.env.VITE_DISPATCHER_URL ||
+  import.meta.env.VITE_DISPATCHER_MODE === '1';
+
+const DEV_BYPASS =
+  import.meta.env.DEV &&
+  typeof window !== 'undefined' &&
+  new URLSearchParams(window.location.search).get('dev') === '1';
 
 const Settings = lazy(() => import('./components/Settings'));
 const SessionList = lazy(() => import('./components/SessionList'));
@@ -30,6 +47,12 @@ const LazyFallback = (
 
 function App() {
   const { isAuthenticated, token, login, logout } = useAuth();
+  const { stageMode, isFirstReduceApplied } = useStageMode();
+  // Phase 2: PC 一覧は App で単一購読し、Header (PCDropdown) / PCTabs に props で配布する。
+  const pcListState = usePcList();
+  const [unreadCount, setUnreadCount] = useState(0);
+  // Phase 3: fullscreen は useFullscreen に抽出
+  const { isFullscreen, toggle: handleFullscreenClick } = useFullscreen();
   // v4: useNotification と useFirebasePCs は廃止（中央サーバーなし、各PCはlocalStorage管理）
   const [booting, setBooting] = useState(true);
   const [activeSession, setActiveSession] = useState(null);
@@ -48,8 +71,94 @@ function App() {
 
   const [quotedText, setQuotedText] = useState('');
   const [suggestedText, setSuggestedText] = useState('');
-  const [activePC, setActivePC] = useState(() => localStorage.getItem('ccr-active-pc') || '');
+  // IndexedDB から読み込む（非同期）。起動中は空文字で待機。
+  const [activePC, setActivePC] = useState('');
   const autoCreated = useRef(false);
+
+  // Phase 3: セッション一覧を App で保持し、RoomTabs / Sidebar に配布する。
+  // SessionBar は hidden 化後もコンポーネント内部で独自に useSession を回して動作する（非表示だが副作用は継続）。
+  const sessionsHook = useSession(token);
+  const sessionsList = sessionsHook.sessions;
+
+  // サイドバー状態（2 状態トグル: open/closed）と overlay open 管理。
+  const [sidebarState, setSidebarState] = useState('open');
+  const [sidebarOverlay, setSidebarOverlay] = useState(false);
+  const sidebarHydratedRef = useRef(false);
+
+  // 起動時: IDB から sidebarState を復元 + 旧 3 状態値 (full/icon/hidden) を正規化
+  useEffect(() => {
+    (async () => {
+      const saved = await idbGet('ccr-sidebar-state', 'open');
+      // 旧値マイグレーション: full→open, icon|hidden→closed
+      const normalized =
+        saved === 'open' || saved === 'full' ? 'open' :
+        saved === 'closed' || saved === 'icon' || saved === 'hidden' ? 'closed' :
+        'open';
+      setSidebarState(normalized);
+      sidebarHydratedRef.current = true;
+      // IDB の旧値 (full/icon/hidden) / キー不存在 (defaultValue が返った場合) を
+      // 新値 (open/closed) で永続化する。React が同値で re-render を省略した場合に
+      // write useEffect (下) が不発になるのを補う。idbSet は冪等なので無条件実行。
+      idbSet('ccr-sidebar-state', normalized);
+    })();
+  }, []);
+
+  // sidebarState 変更時に IDB 保存（復元後のみ）
+  useEffect(() => {
+    if (!sidebarHydratedRef.current) return;
+    idbSet('ccr-sidebar-state', sidebarState);
+  }, [sidebarState]);
+
+  const handleSidebarToggle = useCallback(() => {
+    // AC-2S-05: モバイル時は overlay を「開く」だけ (冪等: 既に open でも true のまま)。
+    // close 経路は backdrop click / close button 経由で onOverlayClose() のみ。
+    if (typeof window !== 'undefined' && window.innerWidth <= 768) {
+      setSidebarOverlay(true);
+      return;
+    }
+    // AC-2S-02, AC-2S-06: デスクトップ open ⇄ closed の 2 状態トグル。
+    setSidebarState((prev) => (prev === 'open' ? 'closed' : 'open'));
+  }, []);
+
+  const handleNewRoomFromSidebar = useCallback(async () => {
+    try {
+      const s = await sessionsHook.createSession();
+      setActiveSession(s.id);
+    } catch (e) {
+      console.error('[App] createSession failed', e);
+    }
+  }, [sessionsHook]);
+
+  const handleCloseRoomTab = useCallback(async (sessionId) => {
+    try {
+      await sessionsHook.deleteSession(sessionId);
+      if (activeSession === sessionId) {
+        // 残セッションから次の active を決める
+        const remaining = sessionsList.filter((s) => s.id !== sessionId);
+        setActiveSession(remaining.length > 0 ? remaining[0].id : null);
+      }
+    } catch (e) {
+      console.error('[App] deleteSession failed', e);
+    }
+  }, [sessionsHook, activeSession, sessionsList]);
+
+  // 起動時: localStorage→IndexedDB マイグレーション → api ストア初期化 → pcStore 初期化 → activePC 復元
+  useEffect(() => {
+    migrateFromLocalStorage()
+      .then(() => initApiStore())
+      .then(() => initPcStore())
+      .then(() => {
+        // PCTabs の listPcs() キャッシュを再ロードさせる
+        window.dispatchEvent(new Event('cc-remote:pcs-changed'));
+        // dispatcher モードでは PC 選択を毎回ディスパッチャ画面から始める
+        if (DISPATCHER_MODE) {
+          setRemoteBase(null);
+          return '';
+        }
+        return idbGet('ccr-active-pc', '');
+      })
+      .then(setActivePC);
+  }, []);
 
   const [claudeReady, setClaudeReady] = useState(false);
   const handleSseState = useCallback((connected, status, ready) => {
@@ -98,19 +207,71 @@ function App() {
   }, [activePC]);
 
   // PC切り替え — v4: 選択された PC の tunnel URL を remoteBase にセット
-  const handleSelectPC = useCallback((pcId, pcUrl) => {
-    setActivePC(pcId);
-    localStorage.setItem('ccr-active-pc', pcId);
+  // 2026-04-17 案1 (シームレス化): dispatcher-link をここで直接実行し、成功時は token+activePC
+  // を同一 commit でセット → PinLogin を一切マウントさせずに main app へ遷移（PIN画面の
+  // 一瞬表示・jackIn アニメ待ちを完全に排除）。
+  // 失敗時のみ従来どおり PinLogin を通す（Google OAuth フォールバック）。
+  const handleSelectPC = useCallback(async (pcId, pcUrl, pcLabel) => {
     const isLocal = !pcUrl || pcUrl === window.location.origin;
+
+    // 1. pcLabel を先にセット → IDB の token キーが `ccr-token-{pcLabel}` で安定する
+    //    （PinLogin が /auth/status で再取得するのを待たずに、新PCの既存 token を参照できる）
+    if (pcLabel) setActivePcLabel(pcLabel);
+
+    // 2. Workers からチケット取得（dispatcher Cookie 有効時のみ ~200ms）
+    let ticket = null;
+    try {
+      const entry = await fetchLinkTicket(pcId);
+      if (entry) ticket = entry.ticket;
+    } catch {}
+
+    // 3. remoteBase をモジュール変数に確定（後続 API が新PCを指す）
     setRemoteBase(isLocal ? null : pcUrl);
+
+    // 4. dispatcher-link 実行（成功すれば token + google session が返る）
+    let linkSucceeded = false;
+    if (ticket) {
+      try {
+        const linkRes = await dispatcherLink(ticket);
+        if (linkRes && linkRes.token && linkRes.session) {
+          await setGoogleSession(linkRes.session);
+          setToken(linkRes.token);  // pcLabel 別 IDB キーに保存
+          linkSucceeded = true;
+        }
+      } catch {
+        // 404（会社PC 未更新）/ 401 などは PinLogin の Google OAuth フォールバックに任せる
+      }
+    }
+
+    // 5. login/activePC/session リセットを同一 React バッチに入れる（自動 batching で 1 commit）
+    if (linkSucceeded) login();  // isAuthenticated=true を立てる
+    setActivePC(pcId);
+    idbSet('ccr-active-pc', pcId);
     setActiveSession(null);
     autoCreated.current = false;
     fetchPcName();
-  }, [fetchPcName]);
+  }, [fetchPcName, login]);
 
   useEffect(() => {
     if (isAuthenticated && token) fetchPcName();
   }, [isAuthenticated, token, fetchPcName]);
+
+  // /notifications/unread ポーリング（Header.jsx から App.jsx に昇格 — ADR-04）
+  useEffect(() => {
+    if (!isAuthenticated || !token) { setUnreadCount(0); return; }
+    let cancelled = false;
+    const fetchUnread = async () => {
+      try {
+        const res = await fetch(`${getApiBase()}/notifications/unread`, { headers: getAuthHeaders() });
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        if (!cancelled) setUnreadCount(data.count || 0);
+      } catch {}
+    };
+    fetchUnread();
+    const timer = setInterval(fetchUnread, 5000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [isAuthenticated, token, activePC]);
 
   // セッション0個 or 全部exited なら自動作成
   useEffect(() => {
@@ -147,8 +308,10 @@ function App() {
 
   // 初回自動起動: ログイン済み かつ チュートリアル未視聴 → インタラクティブチュートリアル表示。
   useEffect(() => {
-    const seen = localStorage.getItem('ccr-tutorial-seen');
-    if (!seen && isAuthenticated) setShowTutorial(true);
+    if (!isAuthenticated) return;
+    idbGet('ccr-tutorial-seen', null).then((seen) => {
+      if (!seen) setShowTutorial(true);
+    });
   }, [isAuthenticated]);
 
   // Settings などからの再生要求を受けてチュートリアルを再起動する。
@@ -210,7 +373,28 @@ function App() {
     );
   }
 
-  if (!isAuthenticated) {
+  if (DISPATCHER_MODE && !activePC && !DEV_BYPASS) {
+    return (
+      <div className="flex flex-col h-full cyber-floor scanlines">
+        <div className="text-center py-6 relative z-10">
+          <div className="mx-auto mb-3 w-14 h-14 rounded-xl bg-[#0a0a0b] border border-cyber-600/30 flex items-center justify-center animate-glow-pulse">
+            <span className="text-[#22c55e] text-base font-mono font-bold">&gt;_C</span>
+          </div>
+          <h1 className="text-2xl font-pixel text-navi-glow tracking-wider animate-neon-flicker">
+            CC REMOTE
+          </h1>
+          <div className="text-txt-muted text-xs font-mono tracking-[0.15em] mt-2">
+            // 操作するPCを選んでください
+          </div>
+        </div>
+        <div className="relative z-10">
+          <PCTabs activePC={null} onSelectPC={handleSelectPC} onAddPC={() => {}} pcListState={pcListState} />
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated && !DEV_BYPASS) {
     return <PinLogin onLogin={login} />;
   }
 
@@ -282,9 +466,23 @@ function App() {
         connected={sseState.connected}
         status={sseState.status}
         pcName={pcName}
-
+        unreadCount={unreadCount}
+        onFullscreenClick={handleFullscreenClick}
+        isFullscreen={isFullscreen}
+        pcs={pcListState.pcs}
+        activePcId={activePC}
+        statuses={pcListState.statuses}
+        onSelectPC={handleSelectPC}
+        pcListLoading={pcListState.loading}
+        pcListAuthError={pcListState.authError}
+        pcListNetworkError={pcListState.networkError}
+        onSidebarToggle={handleSidebarToggle}
+        sidebarState={sidebarState}
       />
-      <PCTabs activePC={activePC} onSelectPC={handleSelectPC} onAddPC={() => setShowAddPC(true)} />
+      {/* Phase 2: PCTabs はヘッダーの PCDropdown に置換済。コードは残し hidden で非表示化。 */}
+      <div className="hidden">
+        <PCTabs activePC={activePC} onSelectPC={handleSelectPC} onAddPC={() => setShowAddPC(true)} pcListState={pcListState} />
+      </div>
       {showAddPC && (
         <AddPCLocal
           onClose={() => setShowAddPC(false)}
@@ -292,18 +490,42 @@ function App() {
             setShowAddPC(false);
             window.dispatchEvent(new Event('cc-remote:pcs-changed'));
             if (pc) {
-              handleSelectPC(pc.id, pc.url);
+              handleSelectPC(pc.id, pc.url, pc.label);
             }
           }}
         />
       )}
-      <>
-          <SessionBar
-            activeSession={activeSession}
+      <div className="flex flex-1 min-h-0">
+        <Sidebar
+          sidebarState={sidebarState}
+          showOverlay={sidebarOverlay}
+          onOverlayClose={() => setSidebarOverlay(false)}
+          sessions={sessionsList}
+          activeSessionId={activeSession}
+          onSessionSelect={setActiveSession}
+          onNewSession={handleNewRoomFromSidebar}
+          onShowSettings={() => setShowSettings(true)}
+          onShowAllSessions={() => setShowSessions(true)}
+        />
+        <main className="flex-1 flex flex-col min-h-0">
+          <RoomTabs
+            sessions={sessionsList}
+            activeSessionId={activeSession}
+            unreadCounts={{}}
             onSelect={setActiveSession}
-            token={token}
-            onShowList={() => setShowSessions(true)}
+            onAdd={handleNewRoomFromSidebar}
+            onClose={handleCloseRoomTab}
+            pcId={activePC}
           />
+          {/* Phase 3: SessionBar は RoomTabs に機能統合済、非表示のまま副作用のみ維持 (AC-04h) */}
+          <div className="hidden">
+            <SessionBar
+              activeSession={activeSession}
+              onSelect={setActiveSession}
+              token={token}
+              onShowList={() => setShowSessions(true)}
+            />
+          </div>
           {showSessions && (
             <Suspense fallback={LazyFallback}>
               <SessionList
@@ -342,9 +564,12 @@ function App() {
             onAuthError={logout}
             onQuote={setQuotedText}
             onSuggest={setSuggestedText}
+            stageMode={stageMode}
+            isFirstReduceApplied={isFirstReduceApplied}
           />
           <InputArea sessionId={activeSession} token={token} onShowTemplates={() => setShowTemplates(true)} onShowSchedule={() => setShowSchedule(true)} quotedText={quotedText} onQuoteClear={() => setQuotedText('')} suggestedText={suggestedText} onSuggestClear={() => setSuggestedText('')} claudeReady={claudeReady} />
-        </>
+        </main>
+      </div>
 
       {/* インタラクティブチュートリアル (初回自動 + Header 若葉マーク起動) */}
       {showTutorial && (

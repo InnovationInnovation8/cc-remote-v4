@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { getToken, getAuthHeaders } from '../utils/api';
+import { idbGet, idbSet } from '../utils/idbStore';
 
 const CACHE_KEY = 'ccr-entitlements';
 const REFRESH_INTERVAL = 5 * 60 * 1000; // 5分
@@ -19,28 +20,24 @@ const DEFAULT_ENTITLEMENTS = {
   },
 };
 
-function loadCache() {
+async function loadCache() {
   try {
-    const raw = localStorage.getItem(CACHE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
+    const parsed = await idbGet(CACHE_KEY, null);
+    if (!parsed) return null;
     // キャッシュが10分以内なら有効
     if (Date.now() - (parsed._cachedAt || 0) < 10 * 60 * 1000) return parsed;
   } catch (_) {}
   return null;
 }
 
-function saveCache(data) {
+async function saveCache(data) {
   try {
-    localStorage.setItem(CACHE_KEY, JSON.stringify({ ...data, _cachedAt: Date.now() }));
+    await idbSet(CACHE_KEY, { ...data, _cachedAt: Date.now() });
   } catch (_) {}
 }
 
 export function useEntitlements() {
-  const [entitlements, setEntitlements] = useState(() => {
-    const cached = loadCache();
-    return cached || DEFAULT_ENTITLEMENTS;
-  });
+  const [entitlements, setEntitlements] = useState(DEFAULT_ENTITLEMENTS);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -56,7 +53,7 @@ export function useEntitlements() {
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      saveCache(data);
+      await saveCache(data);
       setEntitlements(data);
       setError(null);
     } catch (e) {
@@ -67,9 +64,12 @@ export function useEntitlements() {
     }
   }, []);
 
-  // 起動時fetch
+  // 起動時: まずキャッシュを読み込んでから fetch
   useEffect(() => {
-    fetchEntitlements();
+    loadCache().then(cached => {
+      if (cached) setEntitlements(cached);
+      fetchEntitlements();
+    });
   }, [fetchEntitlements]);
 
   // 5分ごとに更新

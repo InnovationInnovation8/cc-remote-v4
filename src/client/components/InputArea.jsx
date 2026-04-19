@@ -5,6 +5,8 @@ import CommandPalette from './CommandPalette';
 import ShortcutBar from './ShortcutBar';
 import { soundClick } from '../utils/sounds';
 import { getAuthHeaders } from '../utils/api';
+import { idbGet, idbSet, idbDelete } from '../utils/idbStore';
+import { track } from '../utils/analytics';
 
 // Rev 6.4: 音声入力自動検出（手動キーボード入力は meta-prompt ラップしない）
 //   - iOS dictation → inputType === 'insertReplacementText' で検出
@@ -15,9 +17,8 @@ export default function InputArea({ sessionId, token, onShowTemplates, onShowSch
   const { sendInput, sendKey } = useSession(token);
   const { online, enqueue } = useOfflineQueue();
   const [text, setText] = useState('');
-  const [history, setHistory] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('ccr-input-history') || '[]'); } catch { return []; }
-  });
+  // IndexedDB から非同期読み込み。初期値は空配列。
+  const [history, setHistory] = useState([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [showPalette, setShowPalette] = useState(false);
   const [guideShown, setGuideShown] = useState(false); // リリース時にtrueに戻す
@@ -36,11 +37,19 @@ export default function InputArea({ sessionId, token, onShowTemplates, onShowSch
     fn();
   }, []);
 
-  useEffect(() => { localStorage.setItem('ccr-autosave', text); }, [text]);
+  useEffect(() => { idbSet('ccr-autosave', text); }, [text]);
   useEffect(() => { if (!text) setVoiceDetected(false); }, [text]);
+  // 起動時: history と autosave を IndexedDB から復元
   useEffect(() => {
-    const saved = localStorage.getItem('ccr-autosave');
-    if (saved) setText(saved);
+    idbGet('ccr-input-history', []).then((hist) => {
+      try {
+        const parsed = typeof hist === 'string' ? JSON.parse(hist) : hist;
+        setHistory(Array.isArray(parsed) ? parsed : []);
+      } catch { setHistory([]); }
+    });
+    idbGet('ccr-autosave', '').then((saved) => {
+      if (saved) setText(saved);
+    });
   }, []);
 
   // claudeReady になったらガイド消す
@@ -105,19 +114,26 @@ export default function InputArea({ sessionId, token, onShowTemplates, onShowSch
       } else {
         await sendInput(sessionId, wrapped + '\r');
       }
+      track('command_sent', {
+        length: wrapped.length,
+        is_voice: voiceDetected,
+        is_offline: !online,
+        has_image: !!previewImg,
+      });
     } catch (err) {
       console.error('[InputArea] send failed:', err);
+      track('command_send_failed', { reason: err?.message || 'unknown' });
       return; // Keep text in input so user doesn't lose it
     }
 
     const newHistory = [text, ...history.filter(h => h !== text)].slice(0, 50);
     setHistory(newHistory);
-    localStorage.setItem('ccr-input-history', JSON.stringify(newHistory));
+    idbSet('ccr-input-history', newHistory);
     setHistoryIndex(-1);
     setText('');
     setVoiceDetected(false);
     setPreviewImg(prev => { if (prev) URL.revokeObjectURL(prev); return null; });
-    localStorage.removeItem('ccr-autosave');
+    idbDelete('ccr-autosave');
   }, [text, sessionId, sendInput, history, online, enqueue, token, voiceDetected]);
 
   const handlePaletteSelect = useCallback((cmd) => {

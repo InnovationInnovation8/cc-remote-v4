@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import BugReport from './BugReport';
 import { startBGM, stopBGM, isBGMPlaying } from '../utils/sounds';
 import { setRemoteBase, getRemoteBase, getToken, clearToken, setToken, getApiBase, getAuthHeaders, isCloudMode, getCloudUrl, clearPinSessionToken, getActivePcId } from '../utils/api';
+import { idbGet, idbSet } from '../utils/idbStore';
 
 function PinChangeModal({ onClose }) {
   const [oldPin, setOldPin] = useState('');
@@ -76,19 +77,23 @@ export default function Settings({ onClose, onLogout, token, onPcChange, onShowS
   const [showQR, setShowQR] = useState(false);
   const [pcs, setPcs] = useState([]);
   const [loadingPcs, setLoadingPcs] = useState(true);
-  const [fontSize, setFontSize] = useState(
-    parseInt(localStorage.getItem('ccr-fontsize') || '13')
-  );
-  const [darkMode, setDarkMode] = useState(
-    localStorage.getItem('ccr-theme') !== 'light'
-  );
+  const [fontSize, setFontSize] = useState(13);
+  const [darkMode, setDarkMode] = useState(true);
   const [sleepMode, setSleepMode] = useState(false);
   const [shortcuts, setShortcuts] = useState([]);
   const [newLabel, setNewLabel] = useState('');
   const [newCommand, setNewCommand] = useState('');
   const [notifSettings, setNotifSettings] = useState({ silentEnabled: false, silentStart: 23, silentEnd: 7, errorOnly: false });
-  const [soundOn, setSoundOn] = useState(localStorage.getItem('ccr-sound') !== 'off');
-  const [bgmOn, setBgmOn] = useState(localStorage.getItem('ccr-bgm') === 'on');
+  const [soundOn, setSoundOn] = useState(true);
+  const [bgmOn, setBgmOn] = useState(false);
+
+  // 起動時: IndexedDB から設定を非同期復元
+  useEffect(() => {
+    idbGet('ccr-fontsize', '13').then(v => setFontSize(parseInt(v) || 13));
+    idbGet('ccr-theme', 'dark').then(v => setDarkMode(v !== 'light'));
+    idbGet('ccr-sound', 'on').then(v => setSoundOn(v !== 'off'));
+    idbGet('ccr-bgm', 'off').then(v => setBgmOn(v === 'on'));
+  }, []);
   const [aiChar, setAiChar] = useState('default');
   const [aiChars, setAiChars] = useState({});
   const [showBugReport, setShowBugReport] = useState(false);
@@ -285,12 +290,12 @@ export default function Settings({ onClose, onLogout, token, onPcChange, onShowS
 
   const toggleSound = (on) => {
     setSoundOn(on);
-    localStorage.setItem('ccr-sound', on ? 'on' : 'off');
+    idbSet('ccr-sound', on ? 'on' : 'off');
   };
 
   const toggleBGM = (on) => {
     setBgmOn(on);
-    localStorage.setItem('ccr-bgm', on ? 'on' : 'off');
+    idbSet('ccr-bgm', on ? 'on' : 'off');
     if (on) {
       startBGM();
     } else {
@@ -300,7 +305,7 @@ export default function Settings({ onClose, onLogout, token, onPcChange, onShowS
 
   const toggleDarkMode = (on) => {
     setDarkMode(on);
-    localStorage.setItem('ccr-theme', on ? 'dark' : 'light');
+    idbSet('ccr-theme', on ? 'dark' : 'light');
     document.documentElement.classList.toggle('light-mode', !on);
   };
 
@@ -427,7 +432,7 @@ export default function Settings({ onClose, onLogout, token, onPcChange, onShowS
 
   const handleFontSize = (size) => {
     setFontSize(size);
-    localStorage.setItem('ccr-fontsize', String(size));
+    idbSet('ccr-fontsize', String(size));
   };
 
   const toggleSleepMode = async (on) => {
@@ -631,7 +636,7 @@ export default function Settings({ onClose, onLogout, token, onPcChange, onShowS
                 key={f.name}
                 onClick={() => {
                   document.body.style.fontFamily = f.value;
-                  localStorage.setItem('ccr-font', f.value);
+                  idbSet('ccr-font', f.value);
                 }}
                 className="px-3 py-1.5 rounded border border-cyber-border text-[10px] font-mono text-txt-secondary hover:border-navi"
                 style={{ fontFamily: f.value }}
@@ -729,8 +734,8 @@ export default function Settings({ onClose, onLogout, token, onPcChange, onShowS
                 onClick={() => {
                   document.documentElement.style.setProperty('--navi-glow', theme.accent);
                   document.documentElement.style.setProperty('--navi-blue', theme.primary);
-                  localStorage.setItem('ccr-theme-accent', theme.accent);
-                  localStorage.setItem('ccr-theme-primary', theme.primary);
+                  idbSet('ccr-theme-accent', theme.accent);
+                  idbSet('ccr-theme-primary', theme.primary);
                 }}
                 className="flex items-center gap-1.5 px-2 py-1.5 rounded border border-cyber-border text-[10px] font-mono text-txt-secondary hover:border-navi"
               >

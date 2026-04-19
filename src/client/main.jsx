@@ -3,11 +3,17 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import './styles/globals.css';
 import { installGlobalErrorHandlers, logClient } from './utils/clientLogger';
+import { initAnalytics, isAnalyticsOptedOut } from './utils/analytics';
 
 // Install global error reporting as early as possible so bootstrap errors are caught.
 installGlobalErrorHandlers();
 // Send a boot ping so we can confirm fresh bundles are loading.
 logClient('boot', `boot ${new Date().toISOString()}`, { href: location.href });
+// 分析（PostHog / Sentry）初期化。env に key がなければ何もしない。
+// ユーザーがオプトアウトしていればスキップ。
+if (!isAnalyticsOptedOut()) {
+  initAnalytics();
+}
 
 // テーマ復元
 if (localStorage.getItem('ccr-theme') === 'light') {

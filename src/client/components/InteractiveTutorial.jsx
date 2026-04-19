@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import tutorialSteps from './tutorialSteps';
+import { idbSet } from '../utils/idbStore';
+import { track } from '../utils/analytics';
 
 const PAD = 8;
 const MARGIN = 12;
@@ -72,6 +74,11 @@ export default function InteractiveTutorial({ onClose }) {
   const tooltipRef = useRef(null);
   const [tooltipPos, setTooltipPos] = useState({ left: 0, top: 0, maxHeight: 500 });
 
+  useEffect(() => {
+    track('tutorial_started');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const step = tutorialSteps[stepIdx];
   const isLast = stepIdx === tutorialSteps.length - 1;
 
@@ -132,14 +139,18 @@ export default function InteractiveTutorial({ onClose }) {
     setTooltipPos(computeTooltipPosition(targetRect, step.placement, w, h));
   }, [targetRect, stepIdx, step.placement]);
 
-  const finish = useCallback(() => {
+  const finish = useCallback((outcome = 'completed') => {
     try {
-      localStorage.setItem('ccr-tutorial-seen', '1');
+      idbSet('ccr-tutorial-seen', '1');
     } catch (_) {
       /* ignore */
     }
+    track(outcome === 'skipped' ? 'tutorial_skipped' : 'tutorial_completed', {
+      at_step: step?.id,
+      step_index: stepIdx,
+    });
     onClose && onClose();
-  }, [onClose]);
+  }, [onClose, step?.id, stepIdx]);
 
   const advance = useCallback(() => {
     // Rev 6: モーダル/画面を開くステップから次に進む時は自動で閉じる
@@ -365,7 +376,7 @@ export default function InteractiveTutorial({ onClose }) {
                 いいえ
               </button>
               <button
-                onClick={finish}
+                onClick={() => finish('skipped')}
                 className="flex-1 py-2 rounded border border-alert-red/60 text-alert-red text-[11px] font-mono hover:bg-alert-red/15 transition-all"
               >
                 はい

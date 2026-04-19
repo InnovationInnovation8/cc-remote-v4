@@ -1,23 +1,28 @@
-import { useState, useEffect } from 'react';
-import { getApiBase, getAuthHeaders } from '../utils/api';
+// CC-Remote v2 UI — Header
+// Phase 2 で中央右エリアに PCDropdown を組み込み。
+// PC 一覧・statuses・onSelectPC は App.jsx から props で受け取る（usePcList は App 側で呼ぶ）。
+import PCDropdown from './PCDropdown';
 
-export default function Header({ onSettingsClick, connected, status, pcName }) {
-  const [unreadCount, setUnreadCount] = useState(0);
-
-  useEffect(() => {
-    const fetchUnread = () => {
-      fetch(`${getApiBase()}/notifications/unread`, {
-        headers: getAuthHeaders(),
-      })
-        .then(r => r.ok ? r.json() : { count: 0 })
-        .then(data => setUnreadCount(data.count || 0))
-        .catch(() => {});
-    };
-    fetchUnread();
-    const timer = setInterval(fetchUnread, 5000);
-    return () => clearInterval(timer);
-  }, []);
-
+export default function Header({
+  onSettingsClick,
+  connected,
+  status,
+  pcName,
+  unreadCount = 0,
+  onFullscreenClick,
+  isFullscreen = false,
+  // Phase 2: PC 切替ドロップダウン用 props
+  pcs = [],
+  activePcId = '',
+  statuses = {},
+  onSelectPC,
+  pcListLoading = false,
+  pcListAuthError = false,
+  pcListNetworkError = false,
+  // サイドバー開閉 (2 状態: open/closed)
+  onSidebarToggle,
+  sidebarState = 'open',
+}) {
 
   return (
     <header className="bg-gradient-to-r from-cyber-800 to-cyber-900 border-b-2 border-navi px-3 py-2 flex-shrink-0 relative">
@@ -25,6 +30,21 @@ export default function Header({ onSettingsClick, connected, status, pcName }) {
       <div className="absolute inset-[1px] border border-navi-glow/8 rounded-sm pointer-events-none" />
 
       <div className="flex items-center gap-2.5">
+        {/* Phase 3: サイドバー切替 ☰ */}
+        {onSidebarToggle && (
+          <button
+            type="button"
+            onClick={onSidebarToggle}
+            aria-label={`サイドバー (${sidebarState})`}
+            title="サイドバー切替"
+            className="flex-shrink-0 w-9 h-9 rounded-lg border border-navi-glow/30 bg-cyber-900/60 flex flex-col items-center justify-center gap-[3px] hover:border-navi-glow hover:shadow-[0_0_6px_rgba(0,232,216,0.3)] transition-all"
+          >
+            <span className="w-4 h-[2px] bg-navi-glow rounded" />
+            <span className="w-4 h-[2px] bg-navi-glow rounded" />
+            <span className="w-4 h-[2px] bg-navi-glow rounded" />
+          </button>
+        )}
+
         {/* 接続インジケータ */}
         <div
           aria-label="接続状態"
@@ -49,6 +69,35 @@ export default function Header({ onSettingsClick, connected, status, pcName }) {
             </div>
           )}
         </div>
+
+        {/* PC 切替ドロップダウン (Phase 2) */}
+        {onSelectPC && (
+          <PCDropdown
+            pcs={pcs}
+            activePcId={activePcId}
+            statuses={statuses}
+            onSelect={onSelectPC}
+            loading={pcListLoading}
+            authError={pcListAuthError}
+            networkError={pcListNetworkError}
+          />
+        )}
+
+        {/* FULLSCREEN トグル */}
+        {onFullscreenClick && (
+          <button
+            type="button"
+            aria-label={isFullscreen ? 'フルスクリーン解除' : 'フルスクリーンに切替'}
+            aria-pressed={isFullscreen}
+            title={isFullscreen ? 'フルスクリーン解除' : 'フルスクリーン'}
+            onClick={onFullscreenClick}
+            className={`flex-shrink-0 px-3 py-1.5 text-xs font-mono rounded border transition-all leading-none ${
+              isFullscreen
+                ? 'bg-navi/20 border-navi/50 text-navi-glow shadow-[0_0_4px_rgba(0,232,216,0.4)]'
+                : 'bg-cyber-900/40 border-cyber-600/30 text-txt-muted hover:border-navi/40 hover:text-txt-secondary'
+            }`}
+          >FULLSCREEN</button>
+        )}
 
         {/* Tutorial button (若葉マーク) */}
         <button

@@ -1,8 +1,10 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { useSSE } from '../hooks/useSSE';
 import SuggestCards from './SuggestCards';
+import { idbGet } from '../utils/idbStore';
+import { useOutputFilter } from '../hooks/useOutputFilter';
 
-// 簡易マークダウン変換
+// 簡易マークダウン変換（``` 検出は useOutputFilter に移管済み）
 function renderMd(text) {
   if (!text) return '\u00A0';
   // ヘッダー
@@ -15,10 +17,6 @@ function renderMd(text) {
   // リスト
   if (/^[-*]\s/.test(text.trim())) {
     return <span>  {'>'} {text.trim().slice(2)}</span>;
-  }
-  // コードブロック境界
-  if (/^```/.test(text.trim())) {
-    return <span className="text-navi/50">{text}</span>;
   }
   // インラインコード `code`
   const parts = text.split(/(`[^`]+`)/g);
@@ -56,23 +54,35 @@ function statusLabel(status) {
   return status;
 }
 
-export default function Terminal({ sessionId, token, onSseState, onAuthError, onQuote, onSuggest }) {
+export default function Terminal({ sessionId, token, onSseState, onAuthError, onQuote, onSuggest, stageMode = 'reduce', isFirstReduceApplied = false }) {
   const { output, status, connected, ready, contextUsage } = useSSE(sessionId, token, onAuthError);
+  const filteredOutput = useOutputFilter(output, stageMode);
 
   useEffect(() => {
     if (onSseState) onSseState(connected, status, ready);
   }, [connected, status, ready, onSseState]);
   const containerRef = useRef(null);
   const [autoScroll, setAutoScroll] = useState(true);
-  const [fontSize, setFontSize] = useState(() =>
-    parseInt(localStorage.getItem('ccr-fontsize') || '13')
-  );
+  const [expandedLines, setExpandedLines] = useState(() => new Set());
+  const [showReduceToast, setShowReduceToast] = useState(false);
+  // IndexedDB から非同期読み込み。初期値 13px でチラつきを最小化。
+  const [fontSize, setFontSize] = useState(13);
+  useEffect(() => {
+    idbGet('ccr-fontsize', '13').then(v => setFontSize(parseInt(v) || 13));
+  }, []);
+
+  useEffect(() => {
+    if (!isFirstReduceApplied) return;
+    setShowReduceToast(true);
+    const t = setTimeout(() => setShowReduceToast(false), 3000);
+    return () => clearTimeout(t);
+  }, [isFirstReduceApplied]);
 
   useEffect(() => {
     if (autoScroll && containerRef.current) {
       containerRef.current.scrollTop = containerRef.current.scrollHeight;
     }
-  }, [output, autoScroll]);
+  }, [filteredOutput, autoScroll]);
 
   const handleScroll = useCallback(() => {
     const el = containerRef.current;
@@ -149,10 +159,10 @@ export default function Terminal({ sessionId, token, onSseState, onAuthError, on
         className="flex-1 overflow-y-auto px-3 py-2 font-mono circuit-dots"
         style={{ fontSize: `${fontSize}px`, lineHeight: '1.6' }}
       >
-        {output.length === 0 && ready && !status && (
+        {filteredOutput.length === 0 && ready && !status && (
           <SuggestCards onSuggest={onSuggest} />
         )}
-        {output.length === 0 && status && (
+        {filteredOutput.length === 0 && status && (
           <div className="flex items-center justify-center h-32 animate-fade-in">
             <div className="text-center">
               <div className="text-navi-glow/60 text-sm font-mono animate-pulse">{statusLabel(status)}</div>
@@ -162,15 +172,55 @@ export default function Terminal({ sessionId, token, onSseState, onAuthError, on
             </div>
           </div>
         )}
-        {output.map((line, i) => {
-          const isInput = /^[\u276F>$]/.test(line.trim());
-          const isError = /error|エラー|失敗/i.test(line);
-          const isSuccess = /success|完了|done/i.test(line);
+        {filteredOutput.map((line, i) => {
+          const textValue = line.text ?? '';
+          const isExpanded = expandedLines.has(i);
+          // _collapsed: コードブロック折畳行（展開可能）
+          if (line._collapsed) {
+            return (
+              <div key={i} className="relative">
+                <div
+                  onClick={() => {
+                    setExpandedLines((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(i)) next.delete(i); else next.add(i);
+                      return next;
+                    });
+                  }}
+                  className="cursor-pointer rounded px-1 -mx-1 text-navi/70 hover:bg-navi/8 transition-colors duration-100 font-mono"
+                >
+                  {isExpanded ? '🔼' : '🔽'} {textValue.replace(/^🔽\s*/, '')}
+                </div>
+                {isExpanded && (
+                  <div className="pl-4 border-l border-navi/20 ml-1 text-txt-muted whitespace-pre-wrap break-all">
+                    {line._lines.map((raw, j) => (
+                      <div key={j}>{raw || '\u00A0'}</div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          }
+
+          // _filtered: useOutputFilter が加工済み（ツールアイコン等）→ そのまま表示
+          if (line._filtered) {
+            return (
+              <div key={i} className="relative">
+                <div className="whitespace-pre-wrap break-all px-1 -mx-1 text-txt-muted font-mono">
+                  {textValue}
+                </div>
+              </div>
+            );
+          }
+
+          const isInput = /^[\u276F>$]/.test(textValue.trim());
+          const isError = /error|エラー|失敗/i.test(textValue);
+          const isSuccess = /success|完了|done/i.test(textValue);
 
           return (
             <div key={i} className="relative">
               <div
-                onClick={() => handleLineTap(line, i)}
+                onClick={() => handleLineTap(textValue, i)}
                 className={`whitespace-pre-wrap break-all cursor-pointer rounded px-1 -mx-1 transition-colors duration-100
                   hover:bg-navi/8
                   ${isInput ? 'text-exe-green font-bold' : 'text-txt-secondary'}
@@ -179,18 +229,24 @@ export default function Terminal({ sessionId, token, onSseState, onAuthError, on
                   ${tappedLine === i ? 'bg-navi/12' : ''}
                 `}
               >
-                {isInput ? (line || '\u00A0') : renderMd(line)}
+                {isInput ? (textValue || '\u00A0') : renderMd(textValue)}
               </div>
-              {tappedLine === i && line.trim() && (
+              {tappedLine === i && textValue.trim() && (
                 <div className="absolute right-1 -top-1 z-40 flex gap-1 animate-fade-in">
-                  <button onClick={() => handleCopy(line)} className="bg-cyber-800 border border-navi/40 rounded px-2 py-1 text-[9px] font-mono text-navi-glow">COPY</button>
-                  <button onClick={() => handleQuote(line)} className="bg-cyber-800 border border-exe-yellow/40 rounded px-2 py-1 text-[9px] font-mono text-exe-yellow">引用</button>
+                  <button onClick={() => handleCopy(textValue)} className="bg-cyber-800 border border-navi/40 rounded px-2 py-1 text-[9px] font-mono text-navi-glow">COPY</button>
+                  <button onClick={() => handleQuote(textValue)} className="bg-cyber-800 border border-exe-yellow/40 rounded px-2 py-1 text-[9px] font-mono text-exe-yellow">引用</button>
                 </div>
               )}
             </div>
           );
         })}
       </div>
+
+      {showReduceToast && (
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-50 bg-cyber-800 border border-navi/50 rounded-md px-3 py-2 text-[11px] font-mono text-navi-glow shadow-neon-blue animate-fade-in pointer-events-none">
+          ノイズ削減モードが有効です
+        </div>
+      )}
 
       {/* Scroll to bottom */}
       {!autoScroll && (
