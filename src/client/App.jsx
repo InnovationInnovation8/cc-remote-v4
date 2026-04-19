@@ -568,6 +568,7 @@ function App() {
           onNewSession={handleNewRoomFromSidebar}
           onShowSettings={() => setShowSettings(true)}
           onShowAllSessions={() => setShowSessions(true)}
+          onDeleteSession={handleCloseRoomTab}
           unreadCount={unreadCount}
         />
       </div>

@@ -14,11 +14,14 @@
 //   onNewSession: () => void
 //   onShowSettings: () => void
 //   onShowAllSessions?: () => void
+//   onDeleteSession?: (sessionId) => void — 長押しで呼ばれる削除（confirm 後に実行）
 //   unreadCount?: number                 — 設定ボタンに表示する未読バッジ（Header から移動）
 //
 // MUST: A3 transition-[width] duration-200 / B1 stageMode 非依存
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { isMobileWidth } from '../utils/responsive';
+
+const LONG_PRESS_MS = 600;
 
 function SidebarContents({
   sessions,
@@ -27,10 +30,31 @@ function SidebarContents({
   onNewSession,
   onShowSettings,
   onShowAllSessions,
+  onDeleteSession,
   unreadCount = 0,
   query,
   setQuery,
 }) {
+  const longPressTimer = useRef(null);
+  const longPressFired = useRef(false);
+
+  const startLongPress = (session) => {
+    longPressFired.current = false;
+    longPressTimer.current = setTimeout(() => {
+      longPressFired.current = true;
+      const label = session.name || session.id.slice(0, 8);
+      if (window.confirm(`ルーム「${label}」を削除しますか？`)) {
+        onDeleteSession?.(session.id);
+      }
+    }, LONG_PRESS_MS);
+  };
+
+  const cancelLongPress = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
   const q = query.trim().toLowerCase();
   const filtered = q
     ? sessions.filter((s) => (s.name || '').toLowerCase().includes(q))
@@ -75,9 +99,17 @@ function SidebarContents({
               <button
                 key={s.id}
                 type="button"
-                onClick={() => onSessionSelect?.(s.id)}
-                title={s.name || s.id}
-                className={`w-full flex items-center gap-2 px-2 py-2 border-l-2 text-left hover:bg-navi/5 transition-all
+                onClick={() => {
+                  if (longPressFired.current) { longPressFired.current = false; return; }
+                  onSessionSelect?.(s.id);
+                }}
+                onContextMenu={(e) => e.preventDefault()}
+                onPointerDown={() => startLongPress(s)}
+                onPointerUp={cancelLongPress}
+                onPointerLeave={cancelLongPress}
+                onPointerCancel={cancelLongPress}
+                title={`${s.name || s.id}\n(長押しで削除)`}
+                className={`w-full flex items-center gap-2 px-2 py-2 border-l-2 text-left hover:bg-navi/5 transition-all select-none touch-none
                   ${isActive ? 'border-navi bg-navi/10 text-navi-glow' : 'border-transparent text-txt-secondary'}`}
               >
                 <span className={`w-2 h-2 rounded-full flex-shrink-0 ${statusColor}`} />
@@ -139,6 +171,7 @@ export default function Sidebar({
   onNewSession,
   onShowSettings,
   onShowAllSessions,
+  onDeleteSession,
   unreadCount = 0,
 }) {
   const [isMobile, setIsMobile] = useState(() => isMobileWidth());
@@ -178,6 +211,7 @@ export default function Sidebar({
             onNewSession={onNewSession}
             onShowSettings={onShowSettings}
             onShowAllSessions={onShowAllSessions}
+            onDeleteSession={onDeleteSession}
             unreadCount={unreadCount}
             query={query}
             setQuery={setQuery}
