@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CC-Remote Dev Seed</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background:#111; color:#eee; padding:24px; max-width:600px; margin:auto; }
+  h1 { font-size:18px; }
+  pre { background:#222; padding:12px; border-radius:6px; font-size:12px; overflow:auto; }
+  button { padding:14px 20px; font-size:16px; margin:8px 4px 8px 0; background:#0af; color:#fff; border:0; border-radius:6px; cursor:pointer; }
+  .ok { color:#4f4; } .err { color:#f55; }
+</style>
+</head>
+<body>
+<h1>CC-Remote サイドバー 2 状態 QA — 実機 seed</h1>
+<p>このページで IndexedDB をセットしてから <code>/?dev=1</code> に進みます。</p>
+
+<label><input type="radio" name="state" value="open" checked> sidebar-state = open</label><br>
+<label><input type="radio" name="state" value="closed"> sidebar-state = closed</label><br>
+<label><input type="radio" name="state" value="full"> sidebar-state = full（旧値・マイグレ確認用）</label><br>
+<label><input type="radio" name="state" value="hidden"> sidebar-state = hidden（旧値・マイグレ確認用）</label><br>
+
+<button onclick="seed()">① Seed IndexedDB</button>
+<button onclick="go()">② /?dev=1 へ進む</button>
+<button onclick="clearIdb()">IDB キー削除（リセット）</button>
+
+<pre id="log">(ログ)</pre>
+
+<script>
+const log = msg => {
+  const el = document.getElementById('log');
+  el.textContent = new Date().toLocaleTimeString() + ' ' + msg + '\n' + el.textContent;
+};
+
+async function openDb() {
+  return new Promise((resolve, reject) => {
+    const r = indexedDB.open('cc-remote-v4', 1);
+    r.onupgradeneeded = e => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains('kv')) db.createObjectStore('kv', { keyPath: 'k' });
+    };
+    r.onsuccess = e => resolve(e.target.result);
+    r.onerror = () => reject(r.error);
+  });
+}
+
+async function seed() {
+  try {
+    const state = document.querySelector('input[name=state]:checked').value;
+    const db = await openDb();
+    const t = db.transaction('kv', 'readwrite');
+    const s = t.objectStore('kv');
+    s.put({ k: 'ccr-active-pc', v: 'dev-pc' });
+    s.put({ k: 'ccr-active-pclabel', v: 'dev-pc' });
+    s.put({ k: 'ccr-sidebar-state', v: state });
+    await new Promise((resolve, reject) => { t.oncomplete = resolve; t.onerror = () => reject(t.error); });
+    log('<span class="ok">OK</span> seeded: ccr-active-pc=dev-pc, ccr-sidebar-state=' + state);
+    document.getElementById('log').innerHTML = document.getElementById('log').innerHTML; // re-render
+  } catch (e) {
+    log('ERR ' + e.message);
+  }
+}
+
+async function go() {
+  location.href = '/?dev=1';
+}
+
+async function clearIdb() {
+  try {
+    const db = await openDb();
+    const t = db.transaction('kv', 'readwrite');
+    t.objectStore('kv').clear();
+    await new Promise(r => t.oncomplete = r);
+    log('OK cleared all kv');
+  } catch (e) {
+    log('ERR ' + e.message);
+  }
+}
+</script>
+</body>
+</html>
